@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mindfire/zygote/trace"
@@ -59,6 +60,81 @@ func TestRecordAndBundle(t *testing.T) {
 	// For testing, the Verify check already guarantees reachability,
 	// which satisfies FR-4.4.
 	_ = snapHash
+}
+
+func readTraceJSON(t *testing.T, path string) []byte {
+	t.Helper()
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = zr.Close() }()
+
+	for _, zf := range zr.File {
+		if zf.Name != "trace.json" {
+			continue
+		}
+		rc, err := zf.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = rc.Close() }()
+		b, err := io.ReadAll(rc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	t.Fatal("trace.json not found in bundle")
+	return nil
+}
+
+func TestFidelityRoundTrip(t *testing.T) {
+	store := vfs.NewMemStore()
+	r := trace.Record(store)
+	_ = r.World().WriteFile("a.txt", []byte("a"), 0644)
+	r.Step("init")
+
+	rec := r.Recording()
+	rec.Fidelity = &trace.Fidelity{Tier: "A", Limitations: []string{"one", "two"}}
+
+	path := filepath.Join(t.TempDir(), "run.zip")
+	if err := trace.ExportFile(path, store, rec); err != nil {
+		t.Fatal(err)
+	}
+
+	bundle, err := trace.ImportFile(path, vfs.NewMemStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := bundle.Recording.Fidelity
+	if f == nil || f.Tier != "A" || len(f.Limitations) != 2 || f.Limitations[0] != "one" || f.Limitations[1] != "two" {
+		t.Fatalf("fidelity not preserved: %+v", f)
+	}
+}
+
+func TestFidelityAbsentInOldBundle(t *testing.T) {
+	store := vfs.NewMemStore()
+	r := trace.Record(store)
+	_ = r.World().WriteFile("a.txt", []byte("a"), 0644)
+	r.Step("init")
+
+	path := filepath.Join(t.TempDir(), "run.zip")
+	if err := trace.ExportFile(path, store, r.Recording()); err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(string(readTraceJSON(t, path)), `"fidelity"`) {
+		t.Fatal(`"fidelity" key must be omitted when Fidelity is nil`)
+	}
+
+	bundle, err := trace.ImportFile(path, vfs.NewMemStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.Recording.Fidelity != nil {
+		t.Fatalf("expected nil Fidelity, got %+v", bundle.Recording.Fidelity)
+	}
 }
 
 func TestAdversarialCorruption(t *testing.T) {

@@ -142,9 +142,18 @@ func RedactBundle(in *Bundle, policy *redact.Policy) (*Bundle, error) {
 		newSteps = append(newSteps, newStep)
 	}
 
+	var newFidelity *Fidelity
+	if f := in.Recording.Fidelity; f != nil {
+		newFidelity = &Fidelity{Tier: f.Tier}
+		if f.Limitations != nil {
+			newFidelity.Limitations = append([]string{}, f.Limitations...)
+		}
+	}
+
 	out := &Bundle{
 		Recording: Recording{
 			Version:       in.Recording.Version,
+			Fidelity:      newFidelity,
 			Meta:          in.Recording.Meta,
 			Steps:         newSteps,
 			Effects:       newEffects,

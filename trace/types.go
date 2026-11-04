@@ -14,12 +14,19 @@ type Step struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
+// Fidelity records the source adapter's fidelity declaration (SRS §8.5).
+type Fidelity struct {
+	Tier        string   `json:"tier"`
+	Limitations []string `json:"limitations,omitempty"`
+}
+
 // Recording is the canonical manifest of a Run, containing steps and effects.
 type Recording struct {
 	Version          int               `json:"version"`
 	HashAlgorithm    string            `json:"hash_algorithm"`
 	Producer         string            `json:"producer"`
 	RedactionApplied string            `json:"redaction_applied,omitempty"`
+	Fidelity         *Fidelity         `json:"fidelity,omitempty"`
 	HasRawPrompts    bool              `json:"has_raw_prompts"`
 	Meta             map[string]string `json:"meta,omitempty"`
 	Steps            []Step            `json:"steps"`

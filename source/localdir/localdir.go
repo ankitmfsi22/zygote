@@ -4,11 +4,13 @@ package localdir
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/mindfire/zygote/source"
 	"github.com/mindfire/zygote/vfs"
 )
 
@@ -39,6 +41,19 @@ func (a *Adapter) shouldExclude(name string) bool {
 		}
 	}
 	return false
+}
+
+// Fidelity declares Tier A fidelity along with the adapter's configured
+func (a *Adapter) Fidelity() source.Fidelity {
+	limitations := []string{
+		"symlinks and non-regular files are excluded (FR-1.10)",
+		fmt.Sprintf("files larger than %d bytes are skipped (FR-7.3)", a.MaxFileSize),
+	}
+	if len(a.ExcludeGlobs) > 0 {
+		limitations = append(limitations,
+			fmt.Sprintf("paths matching exclude globs are skipped (FR-7.2): %s", strings.Join(a.ExcludeGlobs, ", ")))
+	}
+	return source.Fidelity{Tier: source.TierA, Limitations: limitations}
 }
 
 // Load loads a world.
