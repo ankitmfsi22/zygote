@@ -66,3 +66,47 @@ func TestRedactBundle(t *testing.T) {
 		t.Fatal("new root object not found in store")
 	}
 }
+
+func TestRedactBundle_PreservesFidelity(t *testing.T) {
+	store := vfs.NewMemStore()
+	r := Record(store)
+	_ = r.World().WriteFile("a.txt", []byte("hello"), 0644)
+	r.Step("init")
+
+	rec := r.Recording()
+	rec.Fidelity = &Fidelity{Tier: "A", Limitations: []string{"one", "two"}}
+	in := &Bundle{Recording: rec, Store: store}
+
+	out, err := RedactBundle(in, &redact.Policy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f := out.Recording.Fidelity
+	if f == nil || f.Tier != "A" || len(f.Limitations) != 2 || f.Limitations[0] != "one" || f.Limitations[1] != "two" {
+		t.Fatalf("fidelity not preserved: %+v", f)
+	}
+	if f == in.Recording.Fidelity {
+		t.Fatal("Fidelity pointer is aliased")
+	}
+
+	// Mutating the output must not affect the input.
+	f.Limitations[0] = "changed"
+	if in.Recording.Fidelity.Limitations[0] != "one" {
+		t.Fatal("Limitations slice is aliased")
+	}
+}
+
+func TestRedactBundle_NilFidelity(t *testing.T) {
+	store := vfs.NewMemStore()
+	r := Record(store)
+	r.Step("init")
+
+	out, err := RedactBundle(&Bundle{Recording: r.Recording(), Store: store}, &redact.Policy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Recording.Fidelity != nil {
+		t.Fatalf("expected nil Fidelity, got %+v", out.Recording.Fidelity)
+	}
+}

@@ -89,8 +89,14 @@ func runRecord() int {
 	}
 
 	// Always save the bundle (NFR-3.6)
+	rec := r.Recording()
+	fid := adapter.Fidelity()
+	rec.Fidelity = &trace.Fidelity{
+		Tier:        string(fid.Tier),
+		Limitations: fid.Limitations,
+	}
 	bundle := &trace.Bundle{
-		Recording: r.Recording(),
+		Recording: rec,
 		Store:     store,
 	}
 

@@ -4,8 +4,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/mindfire/zygote/source"
 	"github.com/mindfire/zygote/source/localdir"
 	"github.com/mindfire/zygote/vfs"
 )
@@ -100,5 +102,36 @@ func TestRoundTrip(t *testing.T) {
 	b, _ = os.ReadFile(filepath.Join(dstDir, "new.txt")) //nolint:gosec
 	if string(b) != "new" {
 		t.Fatal("Apply did not write new file")
+	}
+}
+
+var _ source.Source = (*localdir.Adapter)(nil)
+
+func TestFidelity(t *testing.T) {
+	a := localdir.New(t.TempDir())
+	a.MaxFileSize = 1234
+	a.ExcludeGlobs = []string{"*.secret", "vendor"}
+
+	f := a.Fidelity()
+	if f.Tier != source.TierA {
+		t.Fatalf("expected Tier A, got %q", f.Tier)
+	}
+
+	joined := strings.Join(f.Limitations, "\n")
+	for _, want := range []string{"symlinks", "1234 bytes", "*.secret", "vendor"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("limitations missing %q: %v", want, f.Limitations)
+		}
+	}
+}
+
+func TestFidelity_NoExcludeGlobs(t *testing.T) {
+	a := localdir.New(t.TempDir())
+	a.ExcludeGlobs = nil
+
+	for _, l := range a.Fidelity().Limitations {
+		if strings.Contains(l, "FR-7.2") {
+			t.Fatalf("unexpected glob limitation: %q", l)
+		}
 	}
 }
