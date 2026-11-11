@@ -23,9 +23,10 @@ func (h *RecordHandler) Handshake(_ int) (int, error) {
 
 // Effect records the effect and returns the value back to the agent.
 func (h *RecordHandler) Effect(op, key string, value []byte) ([]byte, error) {
-	return h.r.Recorder().Record(op, key, func() ([]byte, error) {
+	val, _, err := h.r.RecordEffect(op, key, func() ([]byte, error) {
 		return value, nil
 	})
+	return val, err
 }
 
 // Step captures the world state boundary.

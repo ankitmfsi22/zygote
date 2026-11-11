@@ -20,6 +20,8 @@ type RunStartInput struct {
 	Dir   string            `json:"dir,omitempty" jsonschema:"directory under the root to seed the world from"`
 	Meta  map[string]string `json:"meta,omitempty" jsonschema:"metadata attached to the run"`
 	Force bool              `json:"force,omitempty" jsonschema:"replace an active run"`
+
+	AutoStep bool `json:"auto_step,omitempty" jsonschema:"derive steps automatically from tool effects"`
 }
 
 // RunStartOutput is the output of run.start.
@@ -49,7 +51,11 @@ func (s *session) runStart(ctx context.Context, _ *mcpsdk.CallToolRequest, in Ru
 	}
 
 	store := vfs.NewMemStore()
-	rec := trace.Record(store)
+	var opts []trace.Option
+	if in.AutoStep {
+		opts = append(opts, trace.WithAutoStep())
+	}
+	rec := trace.Record(store, opts...)
 	for k, v := range in.Meta {
 		rec.Set(k, v)
 	}
@@ -116,7 +122,8 @@ type RunEffectInput struct {
 
 // RunEffectOutput is the output of run.effect.
 type RunEffectOutput struct {
-	Seq int `json:"seq"`
+	Seq      int            `json:"seq"`
+	AutoStep *RunStepOutput `json:"auto_step,omitempty"`
 }
 
 func (s *session) runEffect(_ context.Context, _ *mcpsdk.CallToolRequest, in RunEffectInput) (*mcpsdk.CallToolResult, RunEffectOutput, error) {
@@ -134,11 +141,16 @@ func (s *session) runEffect(_ context.Context, _ *mcpsdk.CallToolRequest, in Run
 		return nil, RunEffectOutput{}, err
 	}
 
-	if _, err := s.rec.Recorder().Record(in.Op, in.Key, func() ([]byte, error) { return value, nil }); err != nil {
+	_, auto, err := s.rec.RecordEffect(in.Op, in.Key, func() ([]byte, error) { return value, nil })
+	if err != nil {
 		s.poisoned = true
 		return nil, RunEffectOutput{}, fmt.Errorf("recording effect: %w", err)
 	}
-	return nil, RunEffectOutput{Seq: len(s.rec.Recorder().Entries()) - 1}, nil
+	out := RunEffectOutput{Seq: len(s.rec.Recorder().Entries()) - 1}
+	if auto != nil {
+		out.AutoStep = &RunStepOutput{N: auto.N, Name: auto.Name, WorldHash: auto.Root, Effects: auto.Effects}
+	}
+	return nil, out, nil
 }
 
 // InputFile is a file supplied inline to run.input.
@@ -309,6 +321,7 @@ func (s *session) runExport(_ context.Context, _ *mcpsdk.CallToolRequest, in Run
 	if s.poisoned {
 		s.rec.Set("incomplete", "true")
 	}
+	s.rec.Finish()
 	bundle := &trace.Bundle{Recording: s.rec.Recording(), Store: s.store}
 	clean, err := trace.RedactBundle(bundle, policy)
 	if err != nil {

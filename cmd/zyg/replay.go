@@ -90,6 +90,10 @@ var replayCmd = &cobra.Command{
 		cancel()
 		cmdErr := cmd.Wait()
 
+		if srvErr == nil && (cmdErr == nil || cmdErr.Error() == "signal: killed") {
+			srvErr = r.Finish()
+		}
+
 		if srvErr != nil {
 			var divErr *journal.DivergenceError
 			if errors.As(srvErr, &divErr) {

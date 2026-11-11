@@ -16,16 +16,21 @@ type RunRecorder struct {
 	steps    []Step
 	meta     map[string]string
 	stepBase int
+	auto     bool
 }
 
 // Record begins a new trace tracking session on top of a store.
-func Record(store vfs.Store) *RunRecorder {
-	return &RunRecorder{
+func Record(store vfs.Store, opts ...Option) *RunRecorder {
+	r := &RunRecorder{
 		world:   vfs.NewWorld(store),
 		journal: journal.NewRecorder(),
 		steps:   make([]Step, 0),
 		meta:    make(map[string]string),
 	}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
 }
 
 // Set stores arbitrary string metadata for the run (e.g. model version, commit).
@@ -45,18 +50,24 @@ func (r *RunRecorder) Recorder() *journal.Recorder {
 
 // Step captures the current world state and effect count as a named boundary.
 func (r *RunRecorder) Step(name string) {
+	r.addStep(name, nil)
+}
+
+func (r *RunRecorder) addStep(name string, metadata map[string]string) *Step {
 	snap := r.world.Snapshot()
 	effs := len(r.journal.Entries())
 
 	step := Step{
-		N:       r.stepBase,
-		Name:    name,
-		Root:    hex.EncodeToString(snap.Root[:]),
-		Effects: effs,
+		N:        r.stepBase,
+		Name:     name,
+		Root:     hex.EncodeToString(snap.Root[:]),
+		Effects:  effs,
+		Metadata: metadata,
 	}
 
 	r.steps = append(r.steps, step)
 	r.stepBase++
+	return &step
 }
 
 // Recording returns the finalized manifest of all steps and effects.
@@ -77,6 +88,8 @@ type RunReplayer struct {
 	replayer *journal.Replayer
 	world    *vfs.World
 	stepIdx  int
+	effects  int
+	auto     bool
 }
 
 // Replay initializes a RunReplayer from a Bundle.
@@ -101,6 +114,7 @@ func Replay(store vfs.Store, bundle *Bundle) (*RunReplayer, error) {
 		replayer: journal.NewReplayer(bundle.Recording.Effects),
 		world:    world,
 		stepIdx:  1, // We start checking from step 1 (step 0 is the init state)
+		auto:     bundle.Recording.Meta[autoStepMetaKey] == "true",
 	}, nil
 }
 
