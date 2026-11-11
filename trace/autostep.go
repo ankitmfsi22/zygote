@@ -52,7 +52,15 @@ func needsFinal(hasLast bool, lastEffects int, lastRoot string, effects int, roo
 
 // RecordEffect records an effect and, in auto-step mode, closes a step after a tool effect.
 func (r *RunRecorder) RecordEffect(op, key string, fn func() ([]byte, error)) ([]byte, *Step, error) {
-	val, err := r.journal.Record(op, key, fn)
+	return r.RecordEffectChunks(op, key, func() ([]byte, []int, error) {
+		v, err := fn()
+		return v, nil, err
+	})
+}
+
+// RecordEffectChunks records a streamed effect with its chunk sizes and, in auto-step mode, closes a step after a tool effect.
+func (r *RunRecorder) RecordEffectChunks(op, key string, fn func() ([]byte, []int, error)) ([]byte, *Step, error) {
+	val, _, err := r.journal.RecordChunks(op, key, fn)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -83,18 +91,24 @@ func (r *RunRecorder) Finish() *Step {
 
 // ReplayEffect replays an effect and, in auto-step mode, verifies the step a tool effect closed.
 func (r *RunReplayer) ReplayEffect(op, key string) ([]byte, error) {
-	val, err := r.replayer.Replay(op, key)
+	val, _, err := r.ReplayEffectChunks(op, key)
+	return val, err
+}
+
+// ReplayEffectChunks replays an effect with its recorded chunk sizes and, in auto-step mode, verifies the step a tool effect closed.
+func (r *RunReplayer) ReplayEffectChunks(op, key string) ([]byte, []int, error) {
+	val, chunks, err := r.replayer.ReplayChunks(op, key)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	r.effects++
 	if !r.auto || !isAutoTrigger(op) {
-		return val, nil
+		return val, chunks, nil
 	}
 	if _, err := r.Step(autoStepName(op)); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return val, nil
+	return val, chunks, nil
 }
 
 // Finish verifies the final auto step the recording closed, if any.

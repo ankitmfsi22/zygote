@@ -1,6 +1,7 @@
 package trace
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
@@ -29,7 +30,12 @@ func RedactBundle(in *Bundle, policy *redact.Policy) (*Bundle, error) {
 	var newEffects []journal.Entry
 
 	for i, entry := range in.Recording.Effects {
-		res, err := eng.Process(fmt.Sprintf("effect-%d", i), entry.Value)
+		value, err := checkEffect(in.Store, entry)
+		if err != nil {
+			return nil, fmt.Errorf("redaction failed (fail-closed): %w", err)
+		}
+
+		res, err := eng.Process(fmt.Sprintf("effect-%d", i), value)
 		if err != nil {
 			return nil, err
 		}
@@ -38,16 +44,19 @@ func RedactBundle(in *Bundle, policy *redact.Policy) (*Bundle, error) {
 			hasRawPrompts = true
 		}
 
-		var newValue []byte
-		if res.DigestOnly {
-			h := hashBytes(entry.Value)
-			newValue = []byte(hex.EncodeToString(h[:]))
-		} else {
-			newValue = res.Content
-		}
-
 		newEntry := entry
-		newEntry.Value = newValue
+		newEntry.ValueRef = ""
+		newEntry.ValueSize = 0
+		if res.DigestOnly {
+			h := hashBytes(value)
+			newEntry.Value = []byte(hex.EncodeToString(h[:]))
+			newEntry.Chunks = nil
+		} else {
+			newEntry.Value = res.Content
+			if !bytes.Equal(res.Content, value) {
+				newEntry.Chunks = nil
+			}
+		}
 		newEffects = append(newEffects, newEntry)
 	}
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/mindfire/zygote/journal"
 	"github.com/mindfire/zygote/pkg/redact"
 	"github.com/mindfire/zygote/source/localdir"
 	"github.com/mindfire/zygote/trace"
@@ -118,6 +119,7 @@ type RunEffectInput struct {
 	Key      string `json:"key" jsonschema:"request identity within the category"`
 	Value    string `json:"value" jsonschema:"the result the agent received"`
 	Encoding string `json:"encoding,omitempty" jsonschema:"text (default) or base64"`
+	Chunks   []int  `json:"chunks,omitempty" jsonschema:"byte sizes of the streamed chunks in arrival order; each positive, summing to the decoded value length"`
 }
 
 // RunEffectOutput is the output of run.effect.
@@ -141,7 +143,11 @@ func (s *session) runEffect(_ context.Context, _ *mcpsdk.CallToolRequest, in Run
 		return nil, RunEffectOutput{}, err
 	}
 
-	_, auto, err := s.rec.RecordEffect(in.Op, in.Key, func() ([]byte, error) { return value, nil })
+	if err := journal.ValidateChunks(in.Chunks, len(value)); err != nil {
+		return nil, RunEffectOutput{}, fmt.Errorf("invalid chunks: %w", err)
+	}
+
+	_, auto, err := s.rec.RecordEffectChunks(in.Op, in.Key, func() ([]byte, []int, error) { return value, in.Chunks, nil })
 	if err != nil {
 		s.poisoned = true
 		return nil, RunEffectOutput{}, fmt.Errorf("recording effect: %w", err)

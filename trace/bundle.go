@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/mindfire/zygote/vfs"
@@ -26,7 +27,17 @@ var (
 
 // ExportFile writes a highly portable zip bundle containing the Recording manifest
 // and all reachable cryptographically hashed vfs objects.
-func ExportFile(filename string, store vfs.Store, rec Recording) error {
+func ExportFile(filename string, store vfs.Store, rec Recording, opts ...ExportOption) error {
+	var cfg exportConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	effects, effectObjects, err := spillEffects(store, rec.Effects, cfg.limit())
+	if err != nil {
+		return err
+	}
+	rec.Effects = effects
+
 	f, err := os.Create(filename) //nolint:gosec
 	if err != nil {
 		return err
@@ -65,12 +76,24 @@ func ExportFile(filename string, store vfs.Store, rec Recording) error {
 		return err
 	}
 
-	// 3. Write objects
+	for hash := range effectObjects {
+		reachable[hash] = struct{}{}
+	}
+	hashes := make([]vfs.Hash, 0, len(reachable))
 	for hash := range reachable {
+		hashes = append(hashes, hash)
+	}
+	slices.SortFunc(hashes, func(a, b vfs.Hash) int { return bytes.Compare(a[:], b[:]) })
+
+	// 3. Write objects
+	for _, hash := range hashes {
 		if hash == vfs.EmptyTreeHash {
 			continue
 		}
-		data, ok := store.Get(hash)
+		data, ok := effectObjects[hash]
+		if !ok {
+			data, ok = store.Get(hash)
+		}
 		if !ok {
 			return fmt.Errorf("missing object in store: %x", hash)
 		}
@@ -143,6 +166,10 @@ func ImportFile(filename string, store vfs.Store) (Bundle, error) {
 				return Bundle{}, err
 			}
 		}
+	}
+
+	if err := validateEffects(store, rec.Effects); err != nil {
+		return Bundle{}, err
 	}
 
 	// 2. Validate reachability (FR-4.4)

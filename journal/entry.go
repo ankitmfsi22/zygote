@@ -6,10 +6,34 @@ import "fmt"
 // Entry represents a single nondeterministic effect recorded during an agent's run.
 // This struct strictly conforms to the zygote SRS format specification.
 type Entry struct {
-	Seq   int    `json:"seq"`
-	Op    string `json:"op"`  // e.g., "model", "clock", "tool:<name>", "http"
-	Key   string `json:"key"` // request identity within the category
-	Value []byte `json:"value"`
+	Seq       int    `json:"seq"`
+	Op        string `json:"op"`  // e.g., "model", "clock", "tool:<name>", "http"
+	Key       string `json:"key"` // request identity within the category
+	Value     []byte `json:"value,omitempty"`
+	ValueRef  string `json:"value_ref,omitempty"`
+	ValueSize int    `json:"value_size,omitempty"`
+	Chunks    []int  `json:"chunks,omitempty"`
+}
+
+// ValidateChunks reports whether chunk sizes are all positive and sum to total; no chunks is always valid.
+func ValidateChunks(chunks []int, total int) error {
+	if len(chunks) == 0 {
+		return nil
+	}
+	sum := 0
+	for i, n := range chunks {
+		if n <= 0 {
+			return fmt.Errorf("chunk %d: size %d must be positive", i, n)
+		}
+		if n > total-sum {
+			return fmt.Errorf("chunks exceed value length %d", total)
+		}
+		sum += n
+	}
+	if sum != total {
+		return fmt.Errorf("chunks sum to %d bytes, want value length %d", sum, total)
+	}
+	return nil
 }
 
 // DivergenceClass represents the taxonomy of divergence defined in SRS §8.4.

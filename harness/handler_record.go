@@ -23,10 +23,19 @@ func (h *RecordHandler) Handshake(_ int) (int, error) {
 
 // Effect records the effect and returns the value back to the agent.
 func (h *RecordHandler) Effect(op, key string, value []byte) ([]byte, error) {
-	val, _, err := h.r.RecordEffect(op, key, func() ([]byte, error) {
-		return value, nil
-	})
+	val, _, err := h.EffectChunks(op, key, value, nil)
 	return val, err
+}
+
+// EffectChunks records a streamed effect with its chunk sizes and returns the value back to the agent.
+func (h *RecordHandler) EffectChunks(op, key string, value []byte, chunks []int) ([]byte, []int, error) {
+	val, _, err := h.r.RecordEffectChunks(op, key, func() ([]byte, []int, error) {
+		return value, chunks, nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return val, chunks, nil
 }
 
 // Step captures the world state boundary.

@@ -15,6 +15,12 @@ type Handler interface {
 	Step(name string) (*StepResult, error)
 }
 
+// ChunkedHandler is an optional Handler extension that carries streamed chunk sizes with an effect.
+type ChunkedHandler interface {
+	Handler
+	EffectChunks(op, key string, value []byte, chunks []int) ([]byte, []int, error)
+}
+
 // Server is a JSON-RPC 2.0 server over line-delimited stdio.
 type Server struct {
 	in      io.Reader
@@ -84,6 +90,14 @@ func (s *Server) handleRequest(req *Request) error {
 		var p EffectParams
 		if err := json.Unmarshal(req.Params, &p); err != nil {
 			res.Error = &Error{Code: ErrInvalidParams, Message: "Invalid effect params"}
+		} else if ch, ok := s.handler.(ChunkedHandler); ok {
+			val, chunks, err := ch.EffectChunks(p.Op, p.Key, p.Value, p.Chunks)
+			if err != nil {
+				return err // Fail closed immediately, propagate Go error
+			}
+			res.Result = EffectResult{Value: val, Chunks: chunks}
+		} else if len(p.Chunks) > 0 {
+			res.Error = &Error{Code: ErrInvalidParams, Message: "Handler does not support chunks"}
 		} else {
 			val, err := s.handler.Effect(p.Op, p.Key, p.Value)
 			if err != nil {

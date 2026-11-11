@@ -26,6 +26,11 @@ func (h *ReplayHandler) Effect(op, key string, _ []byte) ([]byte, error) {
 	return h.r.ReplayEffect(op, key)
 }
 
+// EffectChunks fetches the recorded effect and its chunk sizes, ignoring the requested value and chunks.
+func (h *ReplayHandler) EffectChunks(op, key string, _ []byte, _ []int) ([]byte, []int, error) {
+	return h.r.ReplayEffectChunks(op, key)
+}
+
 // Step verifies the agent's world against the recording.
 func (h *ReplayHandler) Step(name string) (*StepResult, error) {
 	chk, err := h.r.Step(name)

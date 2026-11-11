@@ -109,9 +109,13 @@ func Replay(store vfs.Store, bundle *Bundle) (*RunReplayer, error) {
 	copy(h[:], hBytes)
 	world := vfs.Fork(store, vfs.Snapshot{Root: h})
 
+	resolver := journal.WithResolver(func(e journal.Entry) ([]byte, error) {
+		return effectValue(store, e)
+	})
+
 	return &RunReplayer{
 		bundle:   bundle,
-		replayer: journal.NewReplayer(bundle.Recording.Effects),
+		replayer: journal.NewReplayer(bundle.Recording.Effects, resolver),
 		world:    world,
 		stepIdx:  1, // We start checking from step 1 (step 0 is the init state)
 		auto:     bundle.Recording.Meta[autoStepMetaKey] == "true",

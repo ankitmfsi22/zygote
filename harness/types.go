@@ -47,14 +47,16 @@ type HandshakeResult struct {
 
 // EffectParams payload.
 type EffectParams struct {
-	Op    string `json:"op"`
-	Key   string `json:"key"`
-	Value []byte `json:"value,omitempty"` // populated on record
+	Op     string `json:"op"`
+	Key    string `json:"key"`
+	Value  []byte `json:"value,omitempty"` // populated on record
+	Chunks []int  `json:"chunks,omitempty"`
 }
 
 // EffectResult payload.
 type EffectResult struct {
-	Value []byte `json:"value"`
+	Value  []byte `json:"value"`
+	Chunks []int  `json:"chunks,omitempty"`
 }
 
 // StepParams payload.

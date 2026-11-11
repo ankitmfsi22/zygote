@@ -63,6 +63,53 @@ func ModelReplay(r *Replayer, key string) (string, error) {
 	return string(val), nil
 }
 
+// ModelStreamRecord records a streamed LLM response as one effect with the assembled value and the chunk sizes.
+func ModelStreamRecord(r *Recorder, key string, call func() ([][]byte, error)) ([][]byte, error) {
+	var streamed [][]byte
+	_, _, err := r.RecordChunks("model", key, func() ([]byte, []int, error) {
+		parts, err := call()
+		if err != nil {
+			return nil, nil, err
+		}
+		streamed = parts
+		var assembled []byte
+		var sizes []int
+		for _, p := range parts {
+			if len(p) == 0 {
+				continue
+			}
+			assembled = append(assembled, p...)
+			sizes = append(sizes, len(p))
+		}
+		return assembled, sizes, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return streamed, nil
+}
+
+// ModelStreamReplay replays a streamed LLM response, re-split at the recorded chunk boundaries.
+func ModelStreamReplay(r *Replayer, key string) ([][]byte, error) {
+	val, chunks, err := r.ReplayChunks("model", key)
+	if err != nil {
+		return nil, err
+	}
+	if len(chunks) == 0 {
+		return [][]byte{val}, nil
+	}
+	if err := ValidateChunks(chunks, len(val)); err != nil {
+		return nil, fmt.Errorf("recorded chunks do not match value: %w", err)
+	}
+	parts := make([][]byte, 0, len(chunks))
+	off := 0
+	for _, n := range chunks {
+		parts = append(parts, val[off:off+n:off+n])
+		off += n
+	}
+	return parts, nil
+}
+
 // ToolRecord records or replays a named tool call.
 func ToolRecord(r *Recorder, name, key string, call func() ([]byte, error)) ([]byte, error) {
 	return r.Record("tool:"+name, key, call)
