@@ -1,4 +1,4 @@
-.PHONY: all build test lint clean check
+.PHONY: all build test lint clean check bench
 
 all: check build
 
@@ -13,6 +13,10 @@ test:
 lint:
 	@echo "==> Running golangci-lint..."
 	@golangci-lint run
+
+bench:
+	@echo "==> Running bundle import benchmark (NFR-1.7)..."
+	@go test -run '^$$' -bench BenchmarkImportBundle100k -benchtime=3x ./trace
 
 clean:
 	@echo "==> Cleaning..."

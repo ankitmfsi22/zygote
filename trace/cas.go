@@ -19,7 +19,10 @@ var ErrInvalidEffect = errors.New("corrupt bundle: invalid effect entry")
 type ExportOption func(*exportConfig)
 
 type exportConfig struct {
-	threshold int
+	threshold  int
+	encrypt    bool
+	recipients []string
+	passphrase string
 }
 
 // WithSpillThreshold sets the size above which effect values are stored by hash; zero keeps the default and a negative value never spills.

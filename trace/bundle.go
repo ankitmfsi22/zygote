@@ -32,11 +32,21 @@ func ExportFile(filename string, store vfs.Store, rec Recording, opts ...ExportO
 	for _, opt := range opts {
 		opt(&cfg)
 	}
+	recipients, err := cfg.ageRecipients()
+	if err != nil {
+		return err
+	}
 	effects, effectObjects, err := spillEffects(store, rec.Effects, cfg.limit())
 	if err != nil {
 		return err
 	}
 	rec.Effects = effects
+
+	if cfg.encrypt {
+		return writeEncrypted(filename, recipients, func(w io.Writer) error {
+			return writeZip(w, store, rec, effectObjects)
+		})
+	}
 
 	f, err := os.Create(filename) //nolint:gosec
 	if err != nil {
@@ -44,7 +54,11 @@ func ExportFile(filename string, store vfs.Store, rec Recording, opts ...ExportO
 	}
 	defer f.Close() //nolint:errcheck
 
-	zw := zip.NewWriter(f)
+	return writeZip(f, store, rec, effectObjects)
+}
+
+func writeZip(w io.Writer, store vfs.Store, rec Recording, effectObjects map[vfs.Hash][]byte) error {
+	zw := zip.NewWriter(w)
 
 	// 1. Write canonical JSON manifest
 	manifestFile, err := zw.Create("trace.json")
@@ -112,13 +126,35 @@ func ExportFile(filename string, store vfs.Store, rec Recording, opts ...ExportO
 
 // ImportFile reads a zip bundle, cryptographically validates every object's
 // integrity, and ensures the manifest is fully loadable before returning it.
-func ImportFile(filename string, store vfs.Store) (Bundle, error) {
-	r, err := zip.OpenReader(filename)
+func ImportFile(filename string, store vfs.Store, opts ...ImportOption) (Bundle, error) {
+	var cfg importConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	data, err := os.ReadFile(filename) //nolint:gosec
 	if err != nil {
 		return Bundle{}, err
 	}
-	defer r.Close() //nolint:errcheck
+	encrypted := bytes.HasPrefix(data, ageMagic)
+	if encrypted {
+		data, err = decryptBundle(data, cfg)
+		if err != nil {
+			return Bundle{}, err
+		}
+	}
 
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		if encrypted {
+			return Bundle{}, fmt.Errorf("%w: %v", ErrCorruptEncrypted, err)
+		}
+		return Bundle{}, err
+	}
+	return importZip(zr, store)
+}
+
+func importZip(r *zip.Reader, store vfs.Store) (Bundle, error) {
 	var rec Recording
 
 	// 1. Read objects and verify integrity (FR-4.3)

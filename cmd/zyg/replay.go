@@ -41,7 +41,7 @@ var replayCmd = &cobra.Command{
 		bundlePath := args[0]
 		store := vfs.NewMemStore()
 
-		bundle, err := trace.ImportFile(bundlePath, store)
+		bundle, err := loadBundle(bundlePath, store)
 		if err != nil {
 			if replayJSON {
 				fmt.Printf(`{"status":"error","message":%q}`+"\n", err.Error())
