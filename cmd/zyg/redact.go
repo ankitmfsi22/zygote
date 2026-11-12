@@ -13,6 +13,7 @@ import (
 var (
 	redactPolicy string
 	redactOut    string
+	redactEnc    encryptFlags
 )
 
 var redactCmd = &cobra.Command{
@@ -22,12 +23,20 @@ var redactCmd = &cobra.Command{
 	Run: func(_ *cobra.Command, args []string) {
 		inPath := args[0]
 
+		exportOpts, err := redactEnc.exportOptions()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(3)
+		}
+
 		store := vfs.NewMemStore()
-		bundle, err := trace.ImportFile(inPath, store)
+		bundle, err := loadBundle(inPath, store)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error loading bundle: %v\n", err)
 			os.Exit(2) // Invalid bundle
 		}
+
+		inputEncrypted, _ := trace.IsEncrypted(inPath)
 
 		policy, err := redact.LoadPolicy(redactPolicy)
 		if err != nil {
@@ -41,9 +50,13 @@ var redactCmd = &cobra.Command{
 			os.Exit(3)
 		}
 
-		if err := trace.ExportFile(redactOut, cleanBundle.Store, cleanBundle.Recording); err != nil {
+		if err := trace.ExportFile(redactOut, cleanBundle.Store, cleanBundle.Recording, exportOpts...); err != nil {
 			fmt.Fprintf(os.Stderr, "Error exporting redacted bundle: %v\n", err)
 			os.Exit(3)
+		}
+
+		if inputEncrypted && !redactEnc.encrypt {
+			fmt.Fprintf(os.Stderr, "Warning: input bundle was encrypted but %s is not; pass --encrypt to protect it\n", redactOut)
 		}
 
 		fmt.Printf("Successfully redacted %s into %s\n", inPath, redactOut)
@@ -52,6 +65,7 @@ var redactCmd = &cobra.Command{
 
 func init() {
 	redactCmd.Flags().StringVar(&redactPolicy, "policy", ".zygote/redact.yaml", "Path to redaction policy")
+	redactEnc.register(redactCmd)
 	redactCmd.Flags().StringVarP(&redactOut, "out", "o", "clean.zip", "Output bundle file")
 	rootCmd.AddCommand(redactCmd)
 }

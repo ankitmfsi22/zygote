@@ -23,11 +23,18 @@ var (
 	recordOut   string
 
 	recordAutoStep bool
+	recordEnc      encryptFlags
 )
 
 func runRecord() int {
 	if recordAgent == "" {
 		fmt.Fprintln(os.Stderr, "Error: --agent is required")
+		return 3
+	}
+
+	exportOpts, err := recordEnc.exportOptions()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 3
 	}
 
@@ -73,6 +80,7 @@ func runRecord() int {
 
 	cmd.Stderr = os.Stderr
 	cmd.Dir = recordDir
+	cmd.Env = agentEnv()
 
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error starting agent: %v\n", err)
@@ -115,7 +123,7 @@ func runRecord() int {
 		return 3
 	}
 
-	if err := trace.ExportFile(recordOut, cleanBundle.Store, cleanBundle.Recording); err != nil {
+	if err := trace.ExportFile(recordOut, cleanBundle.Store, cleanBundle.Recording, exportOpts...); err != nil {
 		fmt.Fprintf(os.Stderr, "Error exporting bundle: %v\n", err)
 		return 3
 	}
@@ -135,6 +143,7 @@ var recordCmd = &cobra.Command{
 func init() {
 	recordCmd.Flags().StringVar(&recordAgent, "agent", "", "Agent command to run")
 	recordCmd.Flags().StringVar(&recordDir, "dir", ".", "Directory to record")
+	recordEnc.register(recordCmd)
 	recordCmd.Flags().StringVarP(&recordOut, "out", "o", "run.zip", "Output bundle file")
 	recordCmd.Flags().BoolVar(&recordAutoStep, "auto-step", false, "Derive steps automatically from tool effects")
 	rootCmd.AddCommand(recordCmd)

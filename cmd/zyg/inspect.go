@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mindfire/zygote/trace"
 	"github.com/mindfire/zygote/vfs"
 	"github.com/spf13/cobra"
 )
@@ -24,7 +23,7 @@ var inspectCmd = &cobra.Command{
 		bundlePath := args[0]
 		store := vfs.NewMemStore()
 
-		bundle, err := trace.ImportFile(bundlePath, store)
+		bundle, err := loadBundle(bundlePath, store)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(2)

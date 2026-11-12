@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/mindfire/zygote/trace"
 	"github.com/mindfire/zygote/vfs"
 	"github.com/spf13/cobra"
 )
@@ -31,7 +30,7 @@ var diffCmd = &cobra.Command{
 		}
 
 		store := vfs.NewMemStore()
-		bundle, err := trace.ImportFile(bundlePath, store)
+		bundle, err := loadBundle(bundlePath, store)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error loading bundle: %v\n", err)
 			os.Exit(2)
