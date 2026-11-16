@@ -139,8 +139,8 @@ func TestVerifyJSONSchema(t *testing.T) {
 	if err := json.Unmarshal([]byte(res.stdout), &raw); err != nil {
 		t.Fatal(err)
 	}
-	assertKeys(t, "report", raw, "schema_version", "corpus", "summary", "exit_code", "recordings")
-	assertKeys(t, "summary", raw["summary"].(map[string]any), "total", "matched", "diverged", "invalid", "error")
+	assertKeys(t, "report", raw, "schema_version", "corpus", "summary", "exit_code", "recordings", "warnings")
+	assertKeys(t, "summary", raw["summary"].(map[string]any), "total", "matched", "approved", "diverged", "invalid", "error")
 	if raw["schema_version"] != float64(1) || raw["exit_code"] != float64(1) || raw["corpus"] != corpus {
 		t.Fatalf("unexpected header: %v", raw)
 	}
