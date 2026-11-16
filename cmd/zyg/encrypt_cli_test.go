@@ -48,7 +48,7 @@ type zygResult struct {
 	code int
 }
 
-func runZyg(t *testing.T, env []string, args ...string) zygResult {
+func runZyg(t testing.TB, env []string, args ...string) zygResult {
 	t.Helper()
 	cmd := exec.CommandContext(context.Background(), zygBinary, args...) //nolint:gosec
 	cmd.Env = append(os.Environ(), env...)
@@ -68,14 +68,14 @@ func runZyg(t *testing.T, env []string, args ...string) zygResult {
 	return res
 }
 
-func requireShell(t *testing.T) {
+func requireShell(t testing.TB) {
 	t.Helper()
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh not available")
 	}
 }
 
-func workDir(t *testing.T, extra map[string]string) string {
+func workDir(t testing.TB, extra map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
 	files := map[string]string{"prompt.txt": cliPrompt}

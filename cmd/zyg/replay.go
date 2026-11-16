@@ -4,15 +4,9 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 
-	"github.com/mindfire/zygote/harness"
-	"github.com/mindfire/zygote/journal"
-	"github.com/mindfire/zygote/trace"
-	"github.com/mindfire/zygote/vfs"
 	"github.com/spf13/cobra"
 )
 
@@ -28,6 +22,57 @@ type divergenceOutput struct {
 	Message string `json:"message"`
 }
 
+func printReplayOutcome(o replayOutcome) int {
+	switch o.Verdict {
+	case verdictMatch:
+		if replayJSON {
+			fmt.Println(`{"status": "match"}`)
+		} else {
+			fmt.Println("Replay matched all steps perfectly.")
+		}
+		return 0
+	case verdictDiverged:
+		d := o.Divergence
+		if replayJSON {
+			b, _ := json.Marshal(divergenceOutput{
+				Status:  "diverged",
+				Class:   string(d.Class),
+				Step:    d.Step,
+				Message: d.Message,
+			})
+			fmt.Println(string(b))
+		} else {
+			fmt.Fprintf(os.Stderr, "[!] DIVERGENCE DETECTED [%s] at step %d: %s\n", d.Class, d.Step, d.Message)
+		}
+		return 1
+	}
+
+	format, jsonOK := "Error: %v\n", false
+	switch o.Stage {
+	case stageImport:
+		format, jsonOK = "Error importing bundle: %v\n", true
+	case stageInit:
+		format, jsonOK = "Error initializing replay: %v\n", true
+	case stagePipe:
+		format = "Error %v\n"
+	case stageStart:
+		format = "Error starting agent: %v\n"
+	case stageHarness:
+		format, jsonOK = "Harness protocol error: %v\n", true
+	case stageAgent:
+		format, jsonOK = "Agent exited with error: %v\n", true
+	}
+	if replayJSON && jsonOK {
+		fmt.Printf(`{"status":"error","message":%q}`+"\n", o.Err.Error())
+	} else {
+		fmt.Fprintf(os.Stderr, format, o.Err)
+	}
+	if o.Verdict == verdictInvalid {
+		return 2
+	}
+	return 3
+}
+
 var replayCmd = &cobra.Command{
 	Use:   "replay [run.zip]",
 	Short: "Replay an agent run from a bundle",
@@ -37,102 +82,7 @@ var replayCmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, "Error: --agent is required")
 			os.Exit(3)
 		}
-
-		bundlePath := args[0]
-		store := vfs.NewMemStore()
-
-		bundle, err := loadBundle(bundlePath, store)
-		if err != nil {
-			if replayJSON {
-				fmt.Printf(`{"status":"error","message":%q}`+"\n", err.Error())
-			} else {
-				fmt.Fprintf(os.Stderr, "Error importing bundle: %v\n", err)
-			}
-			os.Exit(2) // bundle invalid
-		}
-
-		r, err := trace.Replay(store, &bundle)
-		if err != nil {
-			if replayJSON {
-				fmt.Printf(`{"status":"error","message":%q}`+"\n", err.Error())
-			} else {
-				fmt.Fprintf(os.Stderr, "Error initializing replay: %v\n", err)
-			}
-			os.Exit(2)
-		}
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		cmd := exec.CommandContext(ctx, "sh", "-c", replayAgent) //nolint:gosec
-
-		stdoutPipe, err := cmd.StdoutPipe()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating stdout pipe: %v\n", err)
-			os.Exit(3)
-		}
-
-		stdinPipe, err := cmd.StdinPipe()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating stdin pipe: %v\n", err)
-			os.Exit(3)
-		}
-
-		cmd.Stderr = os.Stderr
-
-		if err := cmd.Start(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error starting agent: %v\n", err)
-			os.Exit(3)
-		}
-
-		srv := harness.NewServer(stdoutPipe, stdinPipe, harness.NewReplayHandler(r))
-
-		srvErr := srv.Serve()
-		cancel()
-		cmdErr := cmd.Wait()
-
-		if srvErr == nil && (cmdErr == nil || cmdErr.Error() == "signal: killed") {
-			srvErr = r.Finish()
-		}
-
-		if srvErr != nil {
-			var divErr *journal.DivergenceError
-			if errors.As(srvErr, &divErr) {
-				if replayJSON {
-					out := divergenceOutput{
-						Status:  "diverged",
-						Class:   string(divErr.Class),
-						Step:    divErr.Step,
-						Message: divErr.Message,
-					}
-					b, _ := json.Marshal(out)
-					fmt.Println(string(b))
-				} else {
-					fmt.Fprintf(os.Stderr, "[!] DIVERGENCE DETECTED [%s] at step %d: %s\n", divErr.Class, divErr.Step, divErr.Message)
-				}
-				os.Exit(1) // Divergence
-			}
-			if replayJSON {
-				fmt.Printf(`{"status":"error","message":%q}`+"\n", srvErr.Error())
-			} else {
-				fmt.Fprintf(os.Stderr, "Harness protocol error: %v\n", srvErr)
-			}
-			os.Exit(3)
-		}
-
-		if cmdErr != nil && cmdErr.Error() != "signal: killed" {
-			if replayJSON {
-				fmt.Printf(`{"status":"error","message":%q}`+"\n", cmdErr.Error())
-			} else {
-				fmt.Fprintf(os.Stderr, "Agent exited with error: %v\n", cmdErr)
-			}
-			os.Exit(3)
-		}
-
-		if replayJSON {
-			fmt.Println(`{"status": "match"}`)
-		} else {
-			fmt.Println("Replay matched all steps perfectly.")
-		}
+		os.Exit(printReplayOutcome(replayBundle(context.Background(), args[0], replayAgent, 0)))
 	},
 }
 

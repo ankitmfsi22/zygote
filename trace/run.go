@@ -132,6 +132,26 @@ func (r *RunReplayer) World() *vfs.World {
 	return r.world
 }
 
+// CheckComplete reports a step-mismatch divergence when the agent ended before replaying every recorded step and effect.
+func (r *RunReplayer) CheckComplete() error {
+	steps := r.bundle.Recording.Steps
+	if r.stepIdx < len(steps) {
+		return &journal.DivergenceError{
+			Class:   journal.ClassStepMismatch,
+			Message: fmt.Sprintf("agent stopped after step %d of %d", r.stepIdx-1, len(steps)-1),
+			Step:    r.stepIdx,
+		}
+	}
+	if total := len(r.bundle.Recording.Effects); r.effects < total {
+		return &journal.DivergenceError{
+			Class:   journal.ClassStepMismatch,
+			Message: fmt.Sprintf("agent stopped after consuming %d of %d recorded effects", r.effects, total),
+			Step:    r.stepIdx,
+		}
+	}
+	return nil
+}
+
 // Step verifies the current world against the next expected step in the bundle.
 func (r *RunReplayer) Step(name string) (Check, error) {
 	if r.stepIdx >= len(r.bundle.Recording.Steps) {
