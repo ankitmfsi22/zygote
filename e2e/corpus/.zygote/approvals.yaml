@@ -1,0 +1,14 @@
+version: 1
+approvals:
+  - recording: run1.zip
+    step: 1
+    class: step-mismatch
+    reason: renamed step to action-v2
+  - recording: run2.zip
+    step: 1
+    class: step-mismatch
+    reason: renamed step to action-v2
+  - recording: run3.zip
+    step: 1
+    class: step-mismatch
+    reason: renamed step to action-v2
