@@ -4,4 +4,4 @@ def call(i, m, p):
     return sys.stdin.readline()
 call(1, "handshake", {"version":1})
 call(2, "effect", {"op":"model","key":"ask","value":"QW5zd2Vy"})
-call(3, "step", {"name":"action"})
+call(3, "step", {"name":"action-v2"})
