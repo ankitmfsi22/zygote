@@ -123,6 +123,52 @@ the exact step with a file-level diff.
 | **Deterministic evals** | The nondeterminism is on disk, so the eval measures your agent. |
 | **`io/fs` native** | `*vfs.World` implements `fs.FS`, `fs.ReadFileFS`, `fs.ReadDirFS`, `fs.StatFS`. Passes `fstest.TestFS`. |
 
+## GitHub Action
+
+`zyg verify` runs as a GitHub Action: it replays a committed corpus of recordings on every pull request,
+comments the first diverging step of each recording, and fails the job on any unapproved divergence.
+
+```yaml
+name: zyg verify
+on: pull_request
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4        # whatever runtime your agent needs
+      - uses: mindfire-test/zygote@<ref>
+        with:
+          corpus: recordings
+          agent: node agent.js
+          passphrase: ${{ secrets.ZYG_PASSPHRASE }}   # only for encrypted bundles
+```
+
+A complete example is in [examples/github-action/zyg-verify.yml](examples/github-action/zyg-verify.yml).
+
+| Input | Default | |
+|---|---|---|
+| `corpus` | required | Directory of committed `*.zip` recordings |
+| `agent` | required | Command that starts your agent |
+| `zyg-version` | `source` | `source` builds zyg from the action's checkout; or a release tag such as `v0.3.0` (downloaded and checked against `checksums.txt`) |
+| `passphrase`, `identity` | | Secrets for encrypted bundles; masked, written to a mode 600 file and passed as `ZYG_PASSPHRASE_FILE` / `ZYG_IDENTITY_FILE` |
+| `approvals` | `<corpus>/.zygote/approvals.yaml` | Approvals file |
+| `timeout` | `5m` | Per-recording time limit |
+| `comment` | `true` | Post or update the pull request comment |
+| `github-token` | `${{ github.token }}` | Token used for the comment |
+
+Outputs: `exit-code` (the `zyg verify` exit code), `report` (path to the JSON report), `markdown` (path to the Markdown report).
+
+The report is always added to the job summary. On `pull_request` events it is also posted as one comment per corpus,
+which later pushes update instead of duplicating. Posting needs `pull-requests: write`. Pull requests from forks get a
+read-only token, so no comment is posted there (and a 403 never fails the job); the result is in the job summary.
+The job fails with `zyg verify`'s exit code; approved divergences do not fail it. Linux and macOS runners only.
+
+**Warning:** do not trigger this action with `pull_request_target` on untrusted PR code: it runs the PR's agent with your repository secrets. Use `pull_request` only.
+
 ## How it works
 
 ### Worlds are content-addressed

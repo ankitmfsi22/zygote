@@ -1,0 +1,107 @@
+name: zyg verify
+description: Replay a committed corpus of Zygote recordings against your agent and comment the first diverging step on the pull request.
+author: mindfire-test
+branding:
+  icon: check-circle
+  color: green
+
+inputs:
+  corpus:
+    description: Directory of committed *.zip recordings to replay.
+    required: true
+  agent:
+    description: Command that starts your agent (run through sh -c).
+    required: true
+  zyg-version:
+    description: >-
+      "source" builds zyg from this action's own checkout; a release tag such as v0.3.0 downloads that release
+      and verifies it against checksums.txt.
+    required: false
+    default: source
+  passphrase:
+    description: Passphrase for encrypted bundles. Pass it from a secret.
+    required: false
+    default: ""
+  identity:
+    description: age identity (private key) for encrypted bundles. Pass it from a secret.
+    required: false
+    default: ""
+  approvals:
+    description: Approvals file (default <corpus>/.zygote/approvals.yaml).
+    required: false
+    default: ""
+  timeout:
+    description: Per-recording time limit as a Go duration, for example 5m.
+    required: false
+    default: ""
+  comment:
+    description: Post or update a pull request comment with the report ("true" or "false").
+    required: false
+    default: "true"
+  github-token:
+    description: Token used to post the pull request comment. Needs pull-requests write permission.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  exit-code:
+    description: Exit code of zyg verify (0 all matched or approved, 1 divergence, 2 invalid bundle, 3 harness error).
+    value: ${{ steps.verify.outputs.exit-code }}
+  report:
+    description: Path to the JSON report.
+    value: ${{ steps.verify.outputs.report }}
+  markdown:
+    description: Path to the Markdown report.
+    value: ${{ steps.verify.outputs.markdown }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check runner
+      shell: bash
+      run: bash "$ACTION_PATH/scripts/action/check-os.sh"
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+
+    - name: Set up Go
+      if: inputs.zyg-version == 'source'
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: ${{ github.action_path }}/go.mod
+        cache: false
+
+    - name: Install zyg
+      shell: bash
+      run: bash "$ACTION_PATH/scripts/action/install-zyg.sh"
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        ZYG_VERSION: ${{ inputs.zyg-version }}
+
+    - name: Verify corpus
+      id: verify
+      shell: bash
+      run: bash "$ACTION_PATH/scripts/action/run-verify.sh"
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        ZYG_CORPUS: ${{ inputs.corpus }}
+        ZYG_AGENT: ${{ inputs.agent }}
+        ZYG_APPROVALS: ${{ inputs.approvals }}
+        ZYG_TIMEOUT: ${{ inputs.timeout }}
+        INPUT_PASSPHRASE: ${{ inputs.passphrase }}
+        INPUT_IDENTITY: ${{ inputs.identity }}
+
+    - name: Comment on pull request
+      shell: bash
+      run: bash "$ACTION_PATH/scripts/action/post-comment.sh"
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        MARKDOWN_FILE: ${{ steps.verify.outputs.markdown }}
+        COMMENT: ${{ inputs.comment }}
+        GH_TOKEN: ${{ inputs.github-token }}
+
+    - name: Fail on divergence
+      shell: bash
+      run: bash "$ACTION_PATH/scripts/action/finish.sh"
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        ZYG_EXIT_CODE: ${{ steps.verify.outputs.exit-code }}

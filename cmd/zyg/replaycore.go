@@ -41,6 +41,19 @@ type replayOutcome struct {
 	Stage      replayStage
 	Err        error
 	Divergence *journal.DivergenceError
+	StepName   string
+}
+
+func recordedStepName(steps []trace.Step, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	for _, s := range steps {
+		if s.N == n {
+			return s.Name
+		}
+	}
+	return ""
 }
 
 func (o replayOutcome) errMessage() string {
@@ -156,7 +169,7 @@ func replayBundle(ctx context.Context, path, agentCmd string, timeout time.Durat
 	if srvErr != nil {
 		var divErr *journal.DivergenceError
 		if errors.As(srvErr, &divErr) {
-			return replayOutcome{Verdict: verdictDiverged, Divergence: divErr}
+			return replayOutcome{Verdict: verdictDiverged, Divergence: divErr, StepName: recordedStepName(bundle.Recording.Steps, divErr.Step)}
 		}
 		return failedReplay(verdictError, stageHarness, srvErr)
 	}

@@ -26,6 +26,7 @@ var (
 	verifyApprovals string
 	verifyApprove   []string
 	verifyReason    string
+	verifyMarkdown  string
 )
 
 type recordingResult struct {
@@ -33,6 +34,7 @@ type recordingResult struct {
 	Verdict        string `json:"verdict"`
 	Class          string `json:"class,omitempty"`
 	Step           *int   `json:"step,omitempty"`
+	StepName       string `json:"step_name,omitempty"`
 	Message        string `json:"message,omitempty"`
 	ApprovalReason string `json:"approval_reason,omitempty"`
 	DurationMs     int64  `json:"duration_ms"`
@@ -105,6 +107,7 @@ func toRecordingResult(name string, o replayOutcome, elapsed time.Duration) reco
 		step := o.Divergence.Step
 		res.Class = string(o.Divergence.Class)
 		res.Step = &step
+		res.StepName = o.StepName
 		res.Message = o.Divergence.Message
 	case verdictInvalid, verdictError:
 		res.Message = o.errMessage()
@@ -183,18 +186,28 @@ func approveRecordings(path string, entries []approval, results []recordingResul
 	return true
 }
 
+// earlyFail writes the markdown report (when requested) for a run that stopped before replaying and returns code.
+func earlyFail(code int, msg string, warnings []approvalWarning) int {
+	if warnings == nil {
+		warnings = []approvalWarning{}
+	}
+	rep := verifyReport{SchemaVersion: verifySchemaVersion, Corpus: verifyCorpus, ExitCode: code, Recordings: []recordingResult{}, Warnings: warnings}
+	writeVerifyMarkdown(rep, msg)
+	return code
+}
+
 func runVerify() int {
 	if verifyAgent == "" {
 		fmt.Fprintln(os.Stderr, "Error: --agent is required")
-		return 3
+		return earlyFail(3, "--agent is required", nil)
 	}
 	if verifyCorpus == "" {
 		fmt.Fprintln(os.Stderr, "Error: --corpus is required")
-		return 3
+		return earlyFail(3, "--corpus is required", nil)
 	}
 	if len(verifyApprove) > 0 && strings.TrimSpace(verifyReason) == "" {
 		fmt.Fprintln(os.Stderr, "Error: --reason is required with --approve")
-		return 3
+		return earlyFail(3, "--reason is required with --approve", nil)
 	}
 
 	approvalsPath := verifyApprovals
@@ -204,23 +217,23 @@ func runVerify() int {
 	entries, haveApprovals, err := loadApprovals(approvalsPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: approvals file %s: %v\n", approvalsPath, err)
-		return 3
+		return earlyFail(3, fmt.Sprintf("approvals file %s: %v", approvalsPath, err), nil)
 	}
 
 	names, err := listCorpus(verifyCorpus)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading corpus: %v\n", err)
-		return 3
+		return earlyFail(3, fmt.Sprintf("reading corpus: %v", err), nil)
 	}
-	unknown := false
+	var unknown []string
 	for _, name := range verifyApprove {
 		if !slices.Contains(names, name) {
 			fmt.Fprintf(os.Stderr, "Error: --approve %s: recording not found in corpus\n", name)
-			unknown = true
+			unknown = append(unknown, name)
 		}
 	}
-	if unknown {
-		return 3
+	if len(unknown) > 0 {
+		return earlyFail(3, "--approve: recording not found in corpus: "+strings.Join(unknown, ", "), nil)
 	}
 
 	rep := verifyReport{SchemaVersion: verifySchemaVersion, Corpus: verifyCorpus, Recordings: []recordingResult{}, Warnings: []approvalWarning{}}
@@ -233,6 +246,7 @@ func runVerify() int {
 		} else {
 			printStaleWarnings(rep.Warnings)
 		}
+		writeVerifyMarkdown(rep, "no bundles found in the corpus")
 		return rep.ExitCode
 	}
 
@@ -244,11 +258,11 @@ func runVerify() int {
 
 	if len(verifyApprove) > 0 {
 		if !approveRecordings(approvalsPath, entries, rep.Recordings) {
-			return 3
+			return earlyFail(3, "--approve failed; see the job log", nil)
 		}
 		if entries, _, err = loadApprovals(approvalsPath); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: approvals file %s: %v\n", approvalsPath, err)
-			return 3
+			return earlyFail(3, fmt.Sprintf("approvals file %s: %v", approvalsPath, err), nil)
 		}
 		haveApprovals = true
 	}
@@ -262,6 +276,7 @@ func runVerify() int {
 	if !verifyJSON {
 		printStaleWarnings(rep.Warnings)
 	}
+	writeVerifyMarkdown(rep, "")
 	return rep.ExitCode
 }
 
@@ -293,6 +308,13 @@ Approvals that no longer apply (recording missing from the corpus, now matching,
 To approve current divergences, run verify with --approve <recording> (repeatable) and --reason "<text>". Each named recording must be
 diverged; otherwise nothing is written and verify exits 3. The approvals file is rewritten atomically, sorted, keeping other entries.
 
+--markdown <file> additionally writes a Markdown report to <file> (atomically, with or without --json). It starts with a hidden
+"<!-- zyg-verify corpus=<corpus> -->" marker line, then the overall result, a table of unapproved divergences (recording, step,
+step name, class, message), approved divergences listed separately, invalid and error recordings, and stale approval warnings.
+Cells are escaped and messages truncated to 300 characters; sections show at most 50 rows and the whole file stays under 60,000
+characters. The file is also written when the run stops early (bad approvals file, unreadable or empty corpus) and contains the error.
+A failure to write it is reported on stderr and does not change the exit code.
+
 Exit codes, with precedence for mixed results (highest wins):
   3  harness error: an agent failed or timed out, the corpus cannot be read, or the approvals file or --approve usage is invalid
   2  invalid bundle (or an empty corpus)
@@ -312,5 +334,6 @@ func init() {
 	verifyCmd.Flags().StringVar(&verifyApprovals, "approvals", "", "Approvals file (default <corpus>/.zygote/approvals.yaml)")
 	verifyCmd.Flags().StringArrayVar(&verifyApprove, "approve", nil, "Approve the current divergence of a recording (repeatable)")
 	verifyCmd.Flags().StringVar(&verifyReason, "reason", "", "Reason recorded with --approve")
+	verifyCmd.Flags().StringVar(&verifyMarkdown, "markdown", "", "Also write a PR-comment-ready Markdown report to this file")
 	rootCmd.AddCommand(verifyCmd)
 }

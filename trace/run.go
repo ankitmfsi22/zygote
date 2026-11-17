@@ -113,13 +113,15 @@ func Replay(store vfs.Store, bundle *Bundle) (*RunReplayer, error) {
 		return effectValue(store, e)
 	})
 
-	return &RunReplayer{
+	r := &RunReplayer{
 		bundle:   bundle,
 		replayer: journal.NewReplayer(bundle.Recording.Effects, resolver),
 		world:    world,
 		stepIdx:  1, // We start checking from step 1 (step 0 is the init state)
 		auto:     bundle.Recording.Meta[autoStepMetaKey] == "true",
-	}, nil
+	}
+	r.replayer.SetStep(r.stepIdx)
+	return r, nil
 }
 
 // Replayer returns the underlying effect replayer.
@@ -178,6 +180,7 @@ func (r *RunReplayer) Step(name string) (Check, error) {
 	}
 
 	r.stepIdx++
+	r.replayer.SetStep(r.stepIdx)
 	if !chk.Match {
 		return chk, &journal.DivergenceError{
 			Class:   journal.ClassWorldMismatch,

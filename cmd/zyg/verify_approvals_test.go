@@ -281,7 +281,7 @@ func TestVerifyApproveWritesFile(t *testing.T) {
 	}
 	want = approvalYAML(
 		entryYAML("a.zip", 1, "step-mismatch", "first"),
-		entryYAML("b.zip", 0, "effect-mismatch", "second"),
+		entryYAML("b.zip", 1, "effect-mismatch", "second"),
 	)
 	if got := readFileString(t, path); got != want {
 		t.Fatalf("file:\n%s\nwant:\n%s", got, want)
@@ -296,7 +296,7 @@ func TestVerifyApproveWritesFile(t *testing.T) {
 	}
 	want = approvalYAML(
 		entryYAML("a.zip", 1, "step-mismatch", "updated"),
-		entryYAML("b.zip", 0, "effect-mismatch", "second"),
+		entryYAML("b.zip", 1, "effect-mismatch", "second"),
 	)
 	got := readFileString(t, path)
 	if got != want {

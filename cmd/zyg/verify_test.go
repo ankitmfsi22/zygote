@@ -158,8 +158,8 @@ func TestVerifyJSONSchema(t *testing.T) {
 		t.Fatalf("order %v, want %v", names, want)
 	}
 	assertKeys(t, "match", byName["b.zip"], "bundle", "verdict", "duration_ms")
-	assertKeys(t, "step-mismatch", byName["a.zip"], "bundle", "verdict", "class", "step", "message", "duration_ms")
-	assertKeys(t, "effect-mismatch", byName["C.ZIP"], "bundle", "verdict", "class", "step", "message", "duration_ms")
+	assertKeys(t, "step-mismatch", byName["a.zip"], "bundle", "verdict", "class", "step", "step_name", "message", "duration_ms")
+	assertKeys(t, "effect-mismatch", byName["C.ZIP"], "bundle", "verdict", "class", "step", "step_name", "message", "duration_ms")
 
 	if byName["b.zip"]["verdict"] != "match" || byName["a.zip"]["verdict"] != "diverged" {
 		t.Fatalf("unexpected verdicts: %v", byName)
@@ -167,8 +167,8 @@ func TestVerifyJSONSchema(t *testing.T) {
 	if byName["a.zip"]["class"] != "step-mismatch" || byName["a.zip"]["step"] != float64(1) {
 		t.Fatalf("step-mismatch result: %v", byName["a.zip"])
 	}
-	if byName["C.ZIP"]["class"] != "effect-mismatch" || byName["C.ZIP"]["step"] != float64(0) {
-		t.Fatalf("step 0 must be kept: %v", byName["C.ZIP"])
+	if byName["C.ZIP"]["class"] != "effect-mismatch" || byName["C.ZIP"]["step"] != float64(1) {
+		t.Fatalf("effect divergence is reported at the step whose snapshot follows it: %v", byName["C.ZIP"])
 	}
 
 	var rep verifyReport

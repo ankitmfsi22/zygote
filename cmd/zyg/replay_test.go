@@ -33,7 +33,7 @@ func TestReplayOutputUnchanged(t *testing.T) {
 		{"step mismatch", []string{"replay", bundle, "--agent", badStep}, "", "[!] DIVERGENCE DETECTED [step-mismatch] at step 2: " + stepMsg + "\n", 1},
 		{"step mismatch json", []string{"replay", bundle, "--agent", badStep, "--json"},
 			`{"status":"diverged","class":"step-mismatch","step":2,"message":"expected \"act\", got \"other\""}` + "\n", "", 1},
-		{"effect mismatch", []string{"replay", bundle, "--agent", badEffect}, "", "[!] DIVERGENCE DETECTED [effect-mismatch] at step 0: different op/key requested than recorded\n", 1},
+		{"effect mismatch", []string{"replay", bundle, "--agent", badEffect}, "", "[!] DIVERGENCE DETECTED [effect-mismatch] at step 1: different op/key requested than recorded\n", 1},
 		{"invalid bundle", []string{"replay", garbage, "--agent", good}, "", "Error importing bundle: zip: not a valid zip file\n", 2},
 		{"invalid bundle json", []string{"replay", garbage, "--agent", good, "--json"}, `{"status":"error","message":"zip: not a valid zip file"}` + "\n", "", 2},
 		{"missing agent", []string{"replay", bundle}, "", "Error: --agent is required\n", 3},
