@@ -132,6 +132,14 @@ func loadBundle(path string, store vfs.Store) (trace.Bundle, error) {
 	return trace.ImportFile(path, store, opts...)
 }
 
+func openArchive(path string) (*trace.Archive, error) {
+	opts, err := importOptions()
+	if err != nil {
+		return nil, err
+	}
+	return trace.OpenArchive(path, opts...)
+}
+
 func agentEnv() []string {
 	env := os.Environ()
 	out := make([]string, 0, len(env))

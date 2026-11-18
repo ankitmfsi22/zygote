@@ -196,6 +196,27 @@ func earlyFail(code int, msg string, warnings []approvalWarning) int {
 	return code
 }
 
+// archiveCorpus opens a corpus given as one file: a multi-run archive (one recording per run, named by run)
+// or a single-run bundle (one recording named by its file name). An unreadable file is one invalid recording.
+func archiveCorpus(path, agentCmd string, timeout time.Duration) ([]string, func(string) replayOutcome) {
+	base := filepath.Base(path)
+	a, err := openArchive(path)
+	if err != nil {
+		o := failedReplay(verdictInvalid, stageImport, err)
+		return []string{base}, func(string) replayOutcome { return o }
+	}
+	names := a.Runs()
+	if !a.Multi() {
+		names = []string{base}
+	}
+	return names, func(name string) replayOutcome {
+		if !a.Multi() {
+			name = ""
+		}
+		return replayRun(context.Background(), a, name, agentCmd, timeout)
+	}
+}
+
 func runVerify() int {
 	if verifyAgent == "" {
 		fmt.Fprintln(os.Stderr, "Error: --agent is required")
@@ -210,9 +231,11 @@ func runVerify() int {
 		return earlyFail(3, "--reason is required with --approve", nil)
 	}
 
+	corpusInfo, statErr := os.Stat(verifyCorpus)
+	fileCorpus := statErr == nil && !corpusInfo.IsDir()
 	approvalsPath := verifyApprovals
 	if approvalsPath == "" {
-		approvalsPath = defaultApprovalsPath(verifyCorpus)
+		approvalsPath = corpusApprovalsPath(verifyCorpus, fileCorpus)
 	}
 	entries, haveApprovals, err := loadApprovals(approvalsPath)
 	if err != nil {
@@ -220,10 +243,18 @@ func runVerify() int {
 		return earlyFail(3, fmt.Sprintf("approvals file %s: %v", approvalsPath, err), nil)
 	}
 
-	names, err := listCorpus(verifyCorpus)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading corpus: %v\n", err)
-		return earlyFail(3, fmt.Sprintf("reading corpus: %v", err), nil)
+	var names []string
+	var replay func(name string) replayOutcome
+	if fileCorpus {
+		names, replay = archiveCorpus(verifyCorpus, verifyAgent, verifyTimeout)
+	} else {
+		if names, err = listCorpus(verifyCorpus); err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading corpus: %v\n", err)
+			return earlyFail(3, fmt.Sprintf("reading corpus: %v", err), nil)
+		}
+		replay = func(name string) replayOutcome {
+			return replayBundle(context.Background(), filepath.Join(verifyCorpus, name), verifyAgent, verifyTimeout)
+		}
 	}
 	var unknown []string
 	for _, name := range verifyApprove {
@@ -252,7 +283,7 @@ func runVerify() int {
 
 	for _, name := range names {
 		start := time.Now()
-		o := replayBundle(context.Background(), filepath.Join(verifyCorpus, name), verifyAgent, verifyTimeout)
+		o := replay(name)
 		rep.Recordings = append(rep.Recordings, toRecordingResult(name, o, time.Since(start)))
 	}
 
@@ -281,14 +312,17 @@ func runVerify() int {
 }
 
 var verifyCmd = &cobra.Command{
-	Use:   "verify --corpus <dir> --agent <cmd>",
+	Use:   "verify --corpus <dir|file> --agent <cmd>",
 	Short: "Replay a corpus of recordings against the current agent",
-	Long: `Replay every *.zip bundle directly inside --corpus against the agent and report a verdict per recording:
-match, approved, diverged (class, step and message), invalid (unreadable, corrupt or undecryptable bundle) or error (harness failure or timeout).
+	Long: `Replay every *.zip bundle directly inside --corpus against the agent and report a verdict per recording.
+--corpus may also be a single file: a multi-run archive made by "zyg merge" (each run is one recording, named by its run name,
+replayed straight from the archive) or a single-run bundle. A file corpus that is unreadable or corrupt is one invalid recording.
+The verdicts are match, approved, diverged (class, step and message), invalid (unreadable, corrupt or undecryptable bundle) or error (harness failure or timeout).
 
 Encrypted bundles are opened with --identity-file / ZYG_IDENTITY_FILE or ZYG_PASSPHRASE_FILE / ZYG_PASSPHRASE; one key applies to the whole corpus.
 
-Approvals mark an intentional divergence as expected. They live in <corpus>/.zygote/approvals.yaml (override with --approvals):
+Approvals mark an intentional divergence as expected. They live in <corpus>/.zygote/approvals.yaml, or for a file corpus in
+<directory of the file>/.zygote/approvals.yaml (override with --approvals). For a merged archive the recording is the run name:
 
   version: 1
   approvals:
@@ -327,11 +361,11 @@ Exit codes, with precedence for mixed results (highest wins):
 }
 
 func init() {
-	verifyCmd.Flags().StringVar(&verifyCorpus, "corpus", "", "Directory of *.zip bundles to replay")
+	verifyCmd.Flags().StringVar(&verifyCorpus, "corpus", "", "Directory of *.zip bundles, a single-run bundle, or a merged multi-run archive to replay")
 	verifyCmd.Flags().StringVar(&verifyAgent, "agent", "", "Agent command to run")
 	verifyCmd.Flags().BoolVar(&verifyJSON, "json", false, "Output machine-readable JSON")
 	verifyCmd.Flags().DurationVar(&verifyTimeout, "timeout", 5*time.Minute, "Per-recording time limit; a timeout is reported as an error")
-	verifyCmd.Flags().StringVar(&verifyApprovals, "approvals", "", "Approvals file (default <corpus>/.zygote/approvals.yaml)")
+	verifyCmd.Flags().StringVar(&verifyApprovals, "approvals", "", "Approvals file (default <corpus>/.zygote/approvals.yaml, or <dir of corpus file>/.zygote/approvals.yaml)")
 	verifyCmd.Flags().StringArrayVar(&verifyApprove, "approve", nil, "Approve the current divergence of a recording (repeatable)")
 	verifyCmd.Flags().StringVar(&verifyReason, "reason", "", "Reason recorded with --approve")
 	verifyCmd.Flags().StringVar(&verifyMarkdown, "markdown", "", "Also write a PR-comment-ready Markdown report to this file")

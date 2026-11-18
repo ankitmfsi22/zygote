@@ -56,6 +56,13 @@ func defaultApprovalsPath(corpus string) string {
 	return filepath.Join(corpus, ".zygote", "approvals.yaml")
 }
 
+func corpusApprovalsPath(corpus string, isFile bool) string {
+	if isFile {
+		return defaultApprovalsPath(filepath.Dir(corpus))
+	}
+	return defaultApprovalsPath(corpus)
+}
+
 func sameStep(a, b *int) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil

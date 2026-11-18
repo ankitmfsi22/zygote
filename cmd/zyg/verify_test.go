@@ -379,9 +379,11 @@ func TestVerifyCorpusEdgeCases(t *testing.T) {
 			t.Fatalf("exit %d: %s%s", res.code, res.stdout, res.stderr)
 		}
 	})
-	t.Run("corpus is a file", func(t *testing.T) {
-		res := runZygSplit(t, nil, "verify", "--corpus", f.ok, "--agent", f.agent)
-		if res.code != 3 || !strings.Contains(res.stderr, "not a directory") {
+	t.Run("corpus is a corrupt file", func(t *testing.T) {
+		garbage := filepath.Join(t.TempDir(), "garbage.zip")
+		writeGarbage(t, garbage)
+		res := runZygSplit(t, nil, "verify", "--corpus", garbage, "--agent", f.agent)
+		if res.code != 2 || !strings.Contains(res.stdout, "INVALID   garbage.zip  zip: not a valid zip file") {
 			t.Fatalf("exit %d: %s%s", res.code, res.stdout, res.stderr)
 		}
 	})

@@ -84,9 +84,18 @@ func agentEndedNormally(waitErr error, killed bool) bool {
 }
 
 func replayBundle(ctx context.Context, path, agentCmd string, timeout time.Duration) replayOutcome {
+	return replayWith(ctx, func(store vfs.Store) (trace.Bundle, error) { return loadBundle(path, store) }, agentCmd, timeout)
+}
+
+// replayRun replays one run of an already opened archive, or the only run of a single-run bundle (named "").
+func replayRun(ctx context.Context, a *trace.Archive, run, agentCmd string, timeout time.Duration) replayOutcome {
+	return replayWith(ctx, func(store vfs.Store) (trace.Bundle, error) { return a.ImportRun(run, store) }, agentCmd, timeout)
+}
+
+func replayWith(ctx context.Context, load func(vfs.Store) (trace.Bundle, error), agentCmd string, timeout time.Duration) replayOutcome {
 	store := vfs.NewMemStore()
 
-	bundle, err := loadBundle(path, store)
+	bundle, err := load(store)
 	if err != nil {
 		return failedReplay(verdictInvalid, stageImport, err)
 	}

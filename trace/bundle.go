@@ -132,24 +132,12 @@ func ImportFile(filename string, store vfs.Store, opts ...ImportOption) (Bundle,
 		opt(&cfg)
 	}
 
-	data, err := os.ReadFile(filename) //nolint:gosec
+	zr, err := openZipFile(filename, cfg)
 	if err != nil {
 		return Bundle{}, err
 	}
-	encrypted := bytes.HasPrefix(data, ageMagic)
-	if encrypted {
-		data, err = decryptBundle(data, cfg)
-		if err != nil {
-			return Bundle{}, err
-		}
-	}
-
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		if encrypted {
-			return Bundle{}, fmt.Errorf("%w: %v", ErrCorruptEncrypted, err)
-		}
-		return Bundle{}, err
+	if f := findEntry(zr, runsIndexName); f != nil {
+		return Bundle{}, multiRunError(f)
 	}
 	return importZip(zr, store)
 }
